@@ -66,6 +66,7 @@ class Operatord < Formula
 
   def install
     libexec.install "lib", "scripts"
+    libexec.install "web" if File.directory?("web") # the browser client, from 0.1.1 on (docs/web.md)
     # opt_libexec, not libexec: the hook installers write the shim path into ~/.claude/settings.json, and the opt
     # link stays valid across upgrades where the versioned Cellar path would not.
     (bin/"operator").write <<~SH
@@ -97,6 +98,7 @@ class Operatord < Formula
         operator hooks install --agent claude  also --agent gemini, --agent opencode
         operator doctor
 
+      Switchboard in a browser, on this or any tailnet machine: http://<this host>:7777/
       Options for the service (OPERATOR_PORT, OPERATOR_BROWSE_ROOTS, ...) go in ~/.operator/env.
       Logs: #{var}/log/operatord.log
     EOS
