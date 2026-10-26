@@ -18,7 +18,11 @@ class GitHubPrivateReleaseDownloadStrategy < CurlDownloadStrategy
   def github_token
     @github_token ||= begin
       token = ENV["HOMEBREW_GITHUB_API_TOKEN"].to_s.strip
-      token = Utils.popen_read("gh", "auth", "token").strip if token.empty?
+      # Homebrew strips PATH while it downloads, so look for gh by full path.
+      if token.empty?
+        gh = ["#{HOMEBREW_PREFIX}/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh", which("gh").to_s].find { |g| File.executable?(g) }
+        token = Utils.popen_read(gh, "auth", "token").strip if gh
+      end
       raise CurlDownloadStrategyError, "no GitHub token for #{@owner}/#{@repo}: set HOMEBREW_GITHUB_API_TOKEN or run `gh auth login`" if token.empty?
 
       token
