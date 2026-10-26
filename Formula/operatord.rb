@@ -1,0 +1,105 @@
+require "json"
+require "utils/curl"
+
+# evil-teddy-ltd/switchboard is private, so a plain Homebrew URL gets a 404 for its release assets. This strategy
+# resolves the asset through the GitHub API and downloads it with a token: HOMEBREW_GITHUB_API_TOKEN when set,
+# otherwise whatever `gh auth login` stored. See docs/install.md in the switchboard repo.
+class GitHubPrivateReleaseDownloadStrategy < CurlDownloadStrategy
+  def initialize(url, name, version, **meta)
+    super
+    m = url.match(%r{\Ahttps://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/(.+)\z})
+    raise CurlDownloadStrategyError, "not a GitHub release asset URL: #{url}" unless m
+
+    @owner, @repo, @tag, @asset_name = m.captures
+  end
+
+  private
+
+  def github_token
+    @github_token ||= begin
+      token = ENV["HOMEBREW_GITHUB_API_TOKEN"].to_s.strip
+      token = Utils.popen_read("gh", "auth", "token").strip if token.empty?
+      raise CurlDownloadStrategyError, "no GitHub token for #{@owner}/#{@repo}: set HOMEBREW_GITHUB_API_TOKEN or run `gh auth login`" if token.empty?
+
+      token
+    end
+  end
+
+  def asset_id
+    @asset_id ||= begin
+      out = Utils::Curl.curl_output(
+        "--silent", "--show-error", "--fail",
+        "--header", "Authorization: Bearer #{github_token}",
+        "--header", "Accept: application/vnd.github+json",
+        "https://api.github.com/repos/#{@owner}/#{@repo}/releases/tags/#{@tag}",
+      )
+      raise CurlDownloadStrategyError, "cannot read release #{@tag} of #{@owner}/#{@repo}: #{out.stderr.strip}" unless out.success?
+
+      asset = JSON.parse(out.stdout).fetch("assets", []).find { |a| a["name"] == @asset_name }
+      raise CurlDownloadStrategyError, "release #{@tag} of #{@owner}/#{@repo} has no asset #{@asset_name}" unless asset
+
+      asset["id"]
+    end
+  end
+
+  def _fetch(url:, resolved_url:, timeout:)
+    curl_download "https://api.github.com/repos/#{@owner}/#{@repo}/releases/assets/#{asset_id}",
+                  "--header", "Authorization: Bearer #{github_token}",
+                  "--header", "Accept: application/octet-stream",
+                  to: temporary_path, timeout: timeout
+  end
+end
+
+class Operatord < Formula
+  desc "Switchboard host daemon: drive coding agents in tmux and herdr from your phone over Tailscale"
+  homepage "https://github.com/evil-teddy-ltd/switchboard"
+  version "0.1.0"
+  url "https://github.com/evil-teddy-ltd/switchboard/releases/download/v#{version}/operatord-#{version}.tar.gz",
+      using: GitHubPrivateReleaseDownloadStrategy
+  sha256 "b5d075cb38ab17b51e353e33b7df7f555c517a8de13b36aa0b1a66384149c27f"
+
+  depends_on "node"
+
+  def install
+    libexec.install "lib", "scripts"
+    # opt_libexec, not libexec: the hook installers write the shim path into ~/.claude/settings.json, and the opt
+    # link stays valid across upgrades where the versioned Cellar path would not.
+    (bin/"operator").write <<~SH
+      #!/bin/sh
+      export OPERATOR_SCRIPTS_DIR="${OPERATOR_SCRIPTS_DIR:-#{opt_libexec}/scripts}"
+      exec "#{Formula["node"].opt_bin}/node" "#{opt_libexec}/lib/operator.mjs" "$@"
+    SH
+  end
+
+  service do
+    run [opt_bin/"operator", "start"]
+    keep_alive true
+    working_dir HOMEBREW_PREFIX
+    log_path var/"log/operatord.log"
+    error_log_path var/"log/operatord.log"
+    # tmux, herdr and tailscale from Homebrew; claude from ~/.local/bin; the Tailscale app's CLI when it is not from brew.
+    environment_variables PATH:               "#{std_service_path_env}:/usr/local/bin:#{Dir.home}/.local/bin:/Applications/Tailscale.app/Contents/MacOS",
+                          NODE_ENV:           "production",
+                          # A filesystem call macOS holds open (a Files and Folders consent prompt) pins a libuv thread; keep spares.
+                          UV_THREADPOOL_SIZE: "16"
+  end
+
+  def caveats
+    <<~EOS
+      First time on this host:
+        operator init                          master token and ~/.operator
+        brew services start operatord          launchd user agent, starts at login
+        operator pair                          QR code to add this host in Switchboard
+        operator hooks install --agent claude  also --agent gemini, --agent opencode
+        operator doctor
+
+      Options for the service (OPERATOR_PORT, OPERATOR_BROWSE_ROOTS, ...) go in ~/.operator/env.
+      Logs: #{var}/log/operatord.log
+    EOS
+  end
+
+  test do
+    assert_equal version.to_s, shell_output("#{bin}/operator --version").strip
+    assert_match "hook shims:  #{opt_libexec}/scripts", shell_output("#{bin}/operator doctor", 0)
+  end
+end
