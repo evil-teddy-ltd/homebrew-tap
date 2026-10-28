@@ -57,10 +57,10 @@ end
 class Operatord < Formula
   desc "Switchboard host daemon: drive coding agents in tmux and herdr from your phone over Tailscale"
   homepage "https://github.com/evil-teddy-ltd/switchboard"
-  version "0.1.13"
+  version "0.1.14"
   url "https://github.com/evil-teddy-ltd/switchboard/releases/download/v#{version}/operatord-#{version}.tar.gz",
       using: GitHubPrivateReleaseDownloadStrategy
-  sha256 "df122cab6ad5fb31fdebc27615d6f7010704f3190c316719fbce0e3d6c560c1e"
+  sha256 "db91a512790792e909cc6cbe1ab3192756dd83b2d802d6752c974eb803c029f9"
 
   depends_on "node"
 
