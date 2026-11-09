@@ -1,10 +1,65 @@
+require "json"
+require "utils/curl"
+
+# evil-teddy-ltd/switchboard is private, so a plain Homebrew URL gets a 404 for its release assets. This strategy
+# resolves the asset through the GitHub API and downloads it with a token: HOMEBREW_GITHUB_API_TOKEN when set,
+# otherwise whatever `gh auth login` stored. See docs/install.md in the switchboard repo.
+class GitHubPrivateReleaseDownloadStrategy < CurlDownloadStrategy
+  def initialize(url, name, version, **meta)
+    super
+    m = url.match(%r{\Ahttps://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/(.+)\z})
+    raise CurlDownloadStrategyError, "not a GitHub release asset URL: #{url}" unless m
+
+    @owner, @repo, @tag, @asset_name = m.captures
+  end
+
+  private
+
+  def github_token
+    @github_token ||= begin
+      token = ENV["HOMEBREW_GITHUB_API_TOKEN"].to_s.strip
+      # Homebrew strips PATH while it downloads, so look for gh by full path.
+      if token.empty?
+        gh = ["#{HOMEBREW_PREFIX}/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh", which("gh").to_s].find { |g| File.executable?(g) }
+        token = Utils.popen_read(gh, "auth", "token").strip if gh
+      end
+      raise CurlDownloadStrategyError, "no GitHub token for #{@owner}/#{@repo}: set HOMEBREW_GITHUB_API_TOKEN or run `gh auth login`" if token.empty?
+
+      token
+    end
+  end
+
+  def asset_id
+    @asset_id ||= begin
+      out = Utils::Curl.curl_output(
+        "--silent", "--show-error", "--fail",
+        "--header", "Authorization: Bearer #{github_token}",
+        "--header", "Accept: application/vnd.github+json",
+        "https://api.github.com/repos/#{@owner}/#{@repo}/releases/tags/#{@tag}",
+      )
+      raise CurlDownloadStrategyError, "cannot read release #{@tag} of #{@owner}/#{@repo}: #{out.stderr.strip}" unless out.success?
+
+      asset = JSON.parse(out.stdout).fetch("assets", []).find { |a| a["name"] == @asset_name }
+      raise CurlDownloadStrategyError, "release #{@tag} of #{@owner}/#{@repo} has no asset #{@asset_name}" unless asset
+
+      asset["id"]
+    end
+  end
+
+  def _fetch(url:, resolved_url:, timeout:)
+    curl_download "https://api.github.com/repos/#{@owner}/#{@repo}/releases/assets/#{asset_id}",
+                  "--header", "Authorization: Bearer #{github_token}",
+                  "--header", "Accept: application/octet-stream",
+                  to: temporary_path, timeout: timeout
+  end
+end
+
 class Operatord < Formula
   desc "Switchboard host daemon: drive coding agents in tmux and herdr from your phone over Tailscale"
-  homepage "https://evil-teddy.com/switchboard"
+  homepage "https://github.com/evil-teddy-ltd/switchboard"
   version "0.1.21"
-  # The tarball is attached to this tap's own release: scripts/release.sh in the switchboard repository mirrors it
-  # here from the (private) switchboard release, so the URL is public and plain Homebrew downloads it.
-  url "https://github.com/evil-teddy-ltd/homebrew-tap/releases/download/v#{version}/operatord-#{version}.tar.gz"
+  url "https://github.com/evil-teddy-ltd/switchboard/releases/download/v#{version}/operatord-#{version}.tar.gz",
+      using: GitHubPrivateReleaseDownloadStrategy
   sha256 "3291a7d29cee0c5d2ce47e90ad81855b1e6c40323dd182306ceca3c2accb9f05"
 
   depends_on "node"
@@ -46,7 +101,6 @@ class Operatord < Formula
       Switchboard in a browser, on this or any tailnet machine: http://<this host>:7777/
       Options for the service (OPERATOR_PORT, OPERATOR_BROWSE_ROOTS, ...) go in ~/.operator/env.
       Logs: #{var}/log/operatord.log
-      Help: https://evil-teddy.com/switchboard
     EOS
   end
 
