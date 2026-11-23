@@ -1,28 +1,28 @@
 class Operatord < Formula
   desc "Host daemon for Switchboard: drive your coding agents from your phone"
   homepage "https://evil-teddy.com/switchboard"
-  version "0.1.23"
+  version "0.1.24"
 
   # One self-contained executable per platform, attached to this tap's own releases by scripts/release.sh in the
   # switchboard repository. It carries its own Node, the hook shims and the browser client; nothing else is needed.
   on_macos do
     on_arm do
       url "https://github.com/evil-teddy-ltd/homebrew-tap/releases/download/v#{version}/operatord-#{version}-darwin-arm64.tar.gz"
-      sha256 "5e823d2ce3f1466057552f10601f54e6c0bf97f160c9f3f61a4afabeb73a047f" # darwin-arm64
+      sha256 "48eaee95cb497244800c5dd11358acd1d25cd0eb660906c9ef01325ce8195809" # darwin-arm64
     end
     on_intel do
       url "https://github.com/evil-teddy-ltd/homebrew-tap/releases/download/v#{version}/operatord-#{version}-darwin-x64.tar.gz"
-      sha256 "7ca7b5de6acd256a1f5e394e93d15127a0da66119eeb9692ab7453c10a64dcaf" # darwin-x64
+      sha256 "5818321803bcdba053940536ab722959132a2ae0dfbef55e2ac187b556d58791" # darwin-x64
     end
   end
   on_linux do
     on_arm do
       url "https://github.com/evil-teddy-ltd/homebrew-tap/releases/download/v#{version}/operatord-#{version}-linux-arm64.tar.gz"
-      sha256 "9584caf7aafe82778c4fe48d852f44f333e6d146962aa6ab85f219625cb55025" # linux-arm64
+      sha256 "1627cea28c3ebeba0604cdb9e9abf3d2d073ab36c3a23d230fccaceb884409df" # linux-arm64
     end
     on_intel do
       url "https://github.com/evil-teddy-ltd/homebrew-tap/releases/download/v#{version}/operatord-#{version}-linux-x64.tar.gz"
-      sha256 "2d2869665ceecbf84ad2e18da9725b7527585444d598b696baeb5ce0e6af18b6" # linux-x64
+      sha256 "494a525112bfe4358bf98229afdf54d75c80d092d5c5aa02e3c1be21c2df073e" # linux-x64
     end
   end
 
